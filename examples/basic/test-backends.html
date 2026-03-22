@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Backend Test — All Families × All Backends</title>
+    <style>
+        body { font-family: monospace; background: #111; color: #eee; padding: 20px; }
+        .ok { color: #2ecc71; }
+        .fail { color: #e74c3c; }
+        .skip { color: #f39c12; }
+        .running { color: #3498db; }
+        table { border-collapse: collapse; margin-top: 16px; }
+        td, th { padding: 6px 16px; border: 1px solid #333; text-align: left; }
+        th { background: #222; }
+    </style>
+</head>
+<body>
+    <h2>Backend Test — All Families × All Backends</h2>
+    <div id="status">Starting...</div>
+    <span id="done" style="display:none">false</span>
+    <img src="./public/parkour.jpg" id="test-img" style="display:none">
+
+    <table>
+        <thead>
+            <tr><th>Family</th><th>Backend</th><th>Status</th><th>Detections</th><th>Time</th></tr>
+        </thead>
+        <tbody id="results"></tbody>
+    </table>
+
+    <script type="module">
+        import { LIBREYOLO } from '../../src/index.ts';
+
+        const img = document.getElementById('test-img');
+        const tbody = document.getElementById('results');
+        const statusEl = document.getElementById('status');
+        const doneEl = document.getElementById('done');
+
+        const tests = [
+            { family: 'yolox',  model: './public/yolox_n.onnx',  inputSize: 416 },
+            { family: 'yolo9',  model: './public/yolo9_t.onnx',  inputSize: 640 },
+            { family: 'rfdetr', model: './public/rfdetr_s.onnx', inputSize: 512 },
+        ];
+
+        const backends = ['webgpu', 'wasm'];
+        window.__results = [];
+
+        function addRow(family, backend, status, dets, time) {
+            const cls = status === 'OK' ? 'ok' : status === 'FAIL' ? 'fail' : status === 'SKIP' ? 'skip' : 'running';
+            const tr = document.createElement('tr');
+            tr.innerHTML = `<td>${family}</td><td>${backend}</td><td class="${cls}">${status}</td><td>${dets ?? '-'}</td><td>${time ?? '-'}</td>`;
+            tbody.appendChild(tr);
+            return tr;
+        }
+
+        async function waitForImage() {
+            return new Promise((resolve) => {
+                if (img.complete && img.naturalWidth > 0) return resolve();
+                img.onload = resolve;
+            });
+        }
+
+        async function runAll() {
+            await waitForImage();
+
+            for (const test of tests) {
+                for (const backend of backends) {
+                    const label = `${test.family} + ${backend}`;
+                    statusEl.textContent = `Testing ${label}...`;
+                    const row = addRow(test.family, backend, 'RUNNING', null, null);
+
+                    try {
+                        const model = new LIBREYOLO(test.model, {
+                            modelFamily: test.family,
+                            inputSize: test.inputSize,
+                            confThres: 0.25,
+                            iouThres: 0.45,
+                            device: backend,
+                        });
+
+                        await model.init();
+                        const start = performance.now();
+                        const result = await model.predict(img);
+                        const elapsed = Math.round(performance.now() - start);
+                        await model.release();
+
+                        row.innerHTML = `<td>${test.family}</td><td>${backend}</td><td class="ok">OK</td><td>${result.numDetections}</td><td>${elapsed}ms</td>`;
+                        window.__results.push({ family: test.family, backend, detections: result.numDetections, time: elapsed });
+                        console.log(`OK: ${label} — ${result.numDetections} dets in ${elapsed}ms`);
+                    } catch (err) {
+                        row.innerHTML = `<td>${test.family}</td><td>${backend}</td><td class="fail">FAIL</td><td colspan="2">${err.message.slice(0, 80)}</td>`;
+                        window.__results.push({ family: test.family, backend, error: err.message });
+                        console.error(`FAIL: ${label} — ${err.message}`);
+                    }
+                }
+            }
+
+            statusEl.textContent = 'Done!';
+            doneEl.textContent = 'true';
+        }
+
+        runAll();
+    </script>
+</body>
+</html>

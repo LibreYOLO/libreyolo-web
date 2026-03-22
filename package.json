@@ -1,0 +1,68 @@
+{
+  "name": "libreyolo-web",
+  "version": "0.0.1",
+  "description": "Multi-family YOLO object detection in the browser. Supports YOLOX, YOLO9, RF-DETR, and YOLOv8/v11/v26 with correct per-family pre/post-processing. Powered by ONNX Runtime (WebGPU + WASM).",
+  "main": "dist/index.js",
+  "module": "dist/index.mjs",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "assets"
+  ],
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsup",
+    "dev": "vite",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "example": "vite -c vite.config.example.ts"
+  },
+  "keywords": [
+    "yolo",
+    "yolov8",
+    "yolov9",
+    "yolox",
+    "rfdetr",
+    "object-detection",
+    "onnxruntime",
+    "webgpu",
+    "wasm",
+    "machine-learning",
+    "computer-vision",
+    "libreyolo"
+  ],
+  "author": "Xuban Ceccon",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/xuban-ceccon/libreyolo-web"
+  },
+  "homepage": "https://github.com/xuban-ceccon/libreyolo-web#readme",
+  "bugs": {
+    "url": "https://github.com/xuban-ceccon/libreyolo-web/issues"
+  },
+  "devDependencies": {
+    "onnxruntime-node": "^1.24.3",
+    "onnxruntime-web": "^1.21.0",
+    "puppeteer": "^24.40.0",
+    "tsup": "^8.0.0",
+    "typescript": "^5.0.0",
+    "vite": "^5.0.0",
+    "vitest": "^1.0.0"
+  },
+  "peerDependencies": {
+    "onnxruntime-web": ">=1.21.0"
+  },
+  "peerDependenciesMeta": {
+    "onnxruntime-web": {
+      "optional": false
+    }
+  }
+}

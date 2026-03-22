@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LibreYOLO Web — Multi-Family Test</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: system-ui, sans-serif; background: #1a1a2e; color: #eee; padding: 20px; }
+        h1 { margin-bottom: 8px; }
+        .subtitle { color: #888; margin-bottom: 24px; }
+        .image-section { margin-bottom: 32px; }
+        .image-section h2 { font-size: 16px; color: #aaa; margin-bottom: 12px; border-bottom: 1px solid #333; padding-bottom: 6px; }
+        .row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+        .card {
+            background: #16213e; border-radius: 12px; padding: 12px;
+            border: 1px solid #333;
+        }
+        .card h3 { font-size: 15px; margin-bottom: 4px; }
+        .card .family-tag {
+            display: inline-block; padding: 2px 8px; border-radius: 4px;
+            font-size: 11px; font-weight: bold; margin-bottom: 8px;
+        }
+        .tag-yolox { background: #e74c3c; }
+        .tag-yolo9 { background: #3498db; }
+        .tag-rfdetr { background: #2ecc71; color: #111; }
+        .image-container { position: relative; width: 100%; }
+        .image-container img { width: 100%; display: block; border-radius: 6px; }
+        .image-container canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }
+        .status { margin-top: 6px; font-size: 13px; color: #aaa; min-height: 18px; }
+        .status.success { color: #2ecc71; }
+        .status.error { color: #e74c3c; }
+        .dets { margin-top: 4px; font-size: 11px; font-family: monospace; color: #999; max-height: 80px; overflow-y: auto; }
+        #global-status { font-size: 14px; color: #3498db; margin-bottom: 16px; }
+    </style>
+</head>
+<body>
+    <h1>LibreYOLO Web — Multi-Family Browser Test</h1>
+    <p class="subtitle">3 model families x 6 images — all running in the browser with WebGPU/WASM</p>
+    <div id="global-status">Loading models...</div>
+    <div id="sections"></div>
+
+    <script type="module">
+        import { LIBREYOLO, BoxOverlay } from '../../src/index.ts';
+
+        const modelConfigs = [
+            { id: 'yolox',  path: './public/yolox_n.onnx',  family: 'yolox',  inputSize: 416, label: 'YOLOX Nano',   tag: 'tag-yolox', detail: '416px · BGR · 0-255' },
+            { id: 'yolo9',  path: './public/yolo9_t.onnx',  family: 'yolo9',  inputSize: 640, label: 'YOLO9 Tiny',   tag: 'tag-yolo9', detail: '640px · RGB · /255' },
+            { id: 'rfdetr', path: './public/rfdetr_n.onnx',  family: 'rfdetr', inputSize: 384, label: 'RF-DETR Nano', tag: 'tag-rfdetr', detail: '384px · RGB · ImageNet' },
+        ];
+
+        const imageFiles = [
+            'parkour.jpg',
+            'test_image.jpg',
+            'street.jpg',
+            'cat.jpg',
+            'couch.jpg',
+            'mountain.jpg',
+        ];
+
+        const globalStatus = document.getElementById('global-status');
+        const sectionsEl = document.getElementById('sections');
+
+        // Build the DOM: one section per image, 3 cards per section
+        const cards = {}; // cards[imageFile][modelId] = { img, canvas, status, dets }
+
+        for (const imageFile of imageFiles) {
+            cards[imageFile] = {};
+
+            const section = document.createElement('div');
+            section.className = 'image-section';
+            section.innerHTML = `<h2>${imageFile}</h2>`;
+
+            const row = document.createElement('div');
+            row.className = 'row';
+
+            for (const m of modelConfigs) {
+                const cardId = `${m.id}-${imageFile.replace('.', '-')}`;
+                const card = document.createElement('div');
+                card.className = 'card';
+                card.innerHTML = `
+                    <h3>${m.label}</h3>
+                    <span class="family-tag ${m.tag}">${m.family}</span>
+                    <span style="color:#666; font-size:11px;">${m.detail}</span>
+                    <div class="image-container">
+                        <img src="./public/${imageFile}" id="img-${cardId}">
+                        <canvas id="canvas-${cardId}"></canvas>
+                    </div>
+                    <div class="status" id="status-${cardId}">Waiting...</div>
+                    <div class="dets" id="dets-${cardId}"></div>
+                `;
+                row.appendChild(card);
+
+                cards[imageFile][m.id] = {
+                    imgId: `img-${cardId}`,
+                    canvasId: `canvas-${cardId}`,
+                    statusId: `status-${cardId}`,
+                    detsId: `dets-${cardId}`,
+                };
+            }
+
+            section.appendChild(row);
+            sectionsEl.appendChild(section);
+        }
+
+        // Wait for all images to load
+        await Promise.all(
+            Array.from(document.querySelectorAll('.image-container img')).map(img =>
+                img.complete ? Promise.resolve() : new Promise(r => { img.onload = r; })
+            )
+        );
+
+        // Size canvases
+        document.querySelectorAll('.image-container').forEach(container => {
+            const img = container.querySelector('img');
+            const canvas = container.querySelector('canvas');
+            canvas.width = img.clientWidth;
+            canvas.height = img.clientHeight;
+        });
+
+        // Load models
+        const models = {};
+        for (const m of modelConfigs) {
+            globalStatus.textContent = `Loading ${m.label}...`;
+            try {
+                const model = new LIBREYOLO(m.path, {
+                    modelFamily: m.family,
+                    inputSize: m.inputSize,
+                    confThres: 0.25,
+                    iouThres: 0.45,
+                });
+                await model.init();
+                models[m.id] = model;
+            } catch (err) {
+                console.error(`${m.id} failed:`, err);
+            }
+        }
+
+        // Run inference
+        globalStatus.textContent = 'Running inference...';
+        let totalDets = 0;
+        let totalTime = 0;
+        let totalRuns = 0;
+
+        for (const imageFile of imageFiles) {
+            for (const m of modelConfigs) {
+                const model = models[m.id];
+                const c = cards[imageFile][m.id];
+                const statusEl = document.getElementById(c.statusId);
+                const detsEl = document.getElementById(c.detsId);
+                const img = document.getElementById(c.imgId);
+                const canvas = document.getElementById(c.canvasId);
+
+                if (!model) {
+                    statusEl.textContent = 'Model not loaded';
+                    statusEl.className = 'status error';
+                    continue;
+                }
+
+                try {
+                    const start = performance.now();
+                    const result = await model.predict(img);
+                    const ms = Math.round(performance.now() - start);
+
+                    // Draw boxes
+                    const overlay = new BoxOverlay({ canvas, lineWidth: 2, fontSize: 11, showLabels: true, showConfidence: true });
+                    overlay.draw(result.detections, {
+                        originalWidth: img.naturalWidth,
+                        originalHeight: img.naturalHeight,
+                    });
+
+                    // Summary
+                    const counts = {};
+                    result.detections.forEach(d => {
+                        const l = d.label || `cls${d.classId}`;
+                        counts[l] = (counts[l] || 0) + 1;
+                    });
+                    const summary = Object.entries(counts).map(([k, v]) => `${v} ${k}`).join(', ') || 'none';
+
+                    statusEl.textContent = `${result.numDetections} dets · ${ms}ms · ${summary}`;
+                    statusEl.className = 'status success';
+
+                    detsEl.innerHTML = result.detections.map((d, i) =>
+                        `${d.label} ${(d.confidence * 100).toFixed(0)}%`
+                    ).join(', ');
+
+                    totalDets += result.numDetections;
+                    totalTime += ms;
+                    totalRuns++;
+                } catch (err) {
+                    statusEl.textContent = `Error: ${err.message}`;
+                    statusEl.className = 'status error';
+                }
+            }
+        }
+
+        globalStatus.textContent = `Done! ${totalRuns} runs, ${totalDets} total detections, ${totalTime}ms total inference time`;
+        globalStatus.style.color = '#2ecc71';
+    </script>
+</body>
+</html>

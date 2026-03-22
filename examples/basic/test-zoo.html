@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Zoo Auto-Download Test</title>
+    <style>
+        body { font-family: monospace; background: #111; color: #eee; padding: 20px; }
+        .ok { color: #2ecc71; }
+        .fail { color: #e74c3c; }
+        .loading { color: #3498db; }
+        #log { white-space: pre-wrap; line-height: 1.6; }
+        .image-container { position: relative; display: inline-block; margin: 8px; }
+        .image-container img { height: 250px; display: block; border-radius: 4px; }
+        .image-container canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }
+        .results { display: flex; flex-wrap: wrap; margin-top: 12px; }
+    </style>
+</head>
+<body>
+    <h2>Zoo Auto-Download Test</h2>
+    <p>No local ONNX files — models download from HuggingFace on demand.</p>
+    <div id="log"></div>
+    <div class="results" id="results"></div>
+    <img src="./public/parkour.jpg" id="test-img" style="display:none">
+
+    <script type="module">
+        import { loadModel, listModels, BoxOverlay } from '../../src/index.ts';
+
+        const log = document.getElementById('log');
+        const resultsEl = document.getElementById('results');
+        const img = document.getElementById('test-img');
+
+        function print(msg, cls = '') {
+            const span = document.createElement('span');
+            span.className = cls;
+            span.textContent = msg + '\n';
+            log.appendChild(span);
+            log.scrollTop = log.scrollHeight;
+        }
+
+        // Wait for image
+        await new Promise(r => { img.onload = r; if (img.complete) r(); });
+
+        // Show available models
+        const all = listModels();
+        print(`Available zoo models: ${all.length}`);
+        all.forEach(m => print(`  ${m.name.padEnd(16)} ${m.model.family.padEnd(8)} ${m.model.inputSize}px  ${m.model.description}`));
+        print('');
+
+        // Test the 3 smallest (one per family) — download from HF
+        const testModels = ['yolox-nano', 'yolo9-tiny', 'rfdetr-nano'];
+
+        for (const name of testModels) {
+            print(`Loading "${name}" from HuggingFace...`, 'loading');
+            const t0 = performance.now();
+
+            try {
+                const model = await loadModel(name);
+                const loadTime = ((performance.now() - t0) / 1000).toFixed(1);
+                print(`  Loaded in ${loadTime}s (${model.provider}, family: ${model.modelFamily})`, 'ok');
+
+                // Run inference
+                const t1 = performance.now();
+                const result = await model.predict(img);
+                const inferTime = Math.round(performance.now() - t1);
+
+                const counts = {};
+                result.detections.forEach(d => {
+                    const l = d.label || `cls${d.classId}`;
+                    counts[l] = (counts[l] || 0) + 1;
+                });
+                const summary = Object.entries(counts).map(([k, v]) => `${v} ${k}`).join(', ') || 'none';
+
+                print(`  ${result.numDetections} detections in ${inferTime}ms — ${summary}`, 'ok');
+
+                // Draw result
+                const card = document.createElement('div');
+                card.className = 'image-container';
+                const displayImg = new Image();
+                displayImg.src = img.src;
+                await new Promise(r => { displayImg.onload = r; if (displayImg.complete) r(); });
+                const canvas = document.createElement('canvas');
+                canvas.width = displayImg.naturalWidth;
+                canvas.height = displayImg.naturalHeight;
+                card.appendChild(displayImg);
+                card.appendChild(canvas);
+                resultsEl.appendChild(card);
+
+                const overlay = new BoxOverlay({ canvas, lineWidth: 3, fontSize: 14 });
+                overlay.draw(result.detections);
+
+                const label = document.createElement('div');
+                label.style.cssText = 'font-size:12px; color:#aaa; text-align:center;';
+                label.textContent = `${name}: ${result.numDetections} dets, ${inferTime}ms`;
+                card.appendChild(label);
+
+                await model.release();
+                print('');
+            } catch (err) {
+                print(`  FAILED: ${err.message}`, 'fail');
+                print('');
+            }
+        }
+
+        print('Done!', 'ok');
+    </script>
+</body>
+</html>

@@ -1,0 +1,11 @@
+node_modules/
+dist/
+.DS_Store
+.env
+*.tgz
+
+# Model files (large binaries)
+*.onnx
+*.bin
+tests/models/
+examples/basic/public/*.jpg

@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Multi-Image Test — 3 Models x 6 Images</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: system-ui, sans-serif; background: #111; color: #eee; padding: 16px; }
+        h2 { margin-bottom: 12px; }
+        #status { color: #3498db; margin-bottom: 16px; font-size: 14px; }
+        #done { display: none; }
+        table { border-collapse: collapse; width: 100%; margin-top: 12px; font-size: 13px; }
+        th, td { border: 1px solid #333; padding: 4px 8px; text-align: center; }
+        th { background: #222; }
+        .ok { color: #2ecc71; }
+        .none { color: #888; }
+        .model-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 20px; }
+        .model-section h3 { font-size: 14px; margin-bottom: 8px; }
+        .image-row { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+        .img-card { position: relative; width: 200px; }
+        .img-card img { width: 100%; display: block; border-radius: 4px; }
+        .img-card canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }
+        .img-card .caption { font-size: 11px; color: #aaa; margin-top: 2px; }
+    </style>
+</head>
+<body>
+    <h2>Multi-Image Test — 3 Models x 6 Images</h2>
+    <div id="status">Loading...</div>
+    <span id="done">false</span>
+
+    <table id="results-table">
+        <thead>
+            <tr><th>Image</th><th>YOLOX Nano</th><th>YOLO9 Tiny</th><th>RF-DETR Nano</th></tr>
+        </thead>
+        <tbody></tbody>
+    </table>
+
+    <div class="model-grid" id="visual-grid"></div>
+
+    <script type="module">
+        import { LIBREYOLO, BoxOverlay } from '../../src/index.ts';
+
+        const images = ['parkour.jpg', 'test_image.jpg', 'street.jpg', 'cat.jpg', 'couch.jpg', 'mountain.jpg'];
+        const models = [
+            { id: 'yolox',  path: './public/yolox_n.onnx',  family: 'yolox',  inputSize: 416, label: 'YOLOX Nano' },
+            { id: 'yolo9',  path: './public/yolo9_t.onnx',  family: 'yolo9',  inputSize: 640, label: 'YOLO9 Tiny' },
+            { id: 'rfdetr', path: './public/rfdetr_n.onnx',  family: 'rfdetr', inputSize: 384, label: 'RF-DETR Nano' },
+        ];
+
+        const statusEl = document.getElementById('status');
+        const doneEl = document.getElementById('done');
+        const tbody = document.querySelector('#results-table tbody');
+        const grid = document.getElementById('visual-grid');
+        window.__results = [];
+
+        // Load all models
+        statusEl.textContent = 'Loading models...';
+        const loaded = {};
+        for (const m of models) {
+            try {
+                const model = new LIBREYOLO(m.path, { modelFamily: m.family, inputSize: m.inputSize, confThres: 0.25, iouThres: 0.45 });
+                await model.init();
+                loaded[m.id] = model;
+                statusEl.textContent = `Loaded ${m.label} (${model.provider})`;
+            } catch (e) {
+                console.error(`Failed to load ${m.id}:`, e);
+                statusEl.textContent = `Failed: ${m.label}: ${e.message}`;
+            }
+        }
+
+        // Create visual sections
+        for (const m of models) {
+            const section = document.createElement('div');
+            section.className = 'model-section';
+            section.innerHTML = `<h3>${m.label}</h3><div class="image-row" id="row-${m.id}"></div>`;
+            grid.appendChild(section);
+        }
+
+        // Run inference on each image x model
+        statusEl.textContent = 'Running inference...';
+
+        for (const imgName of images) {
+            const row = document.createElement('tr');
+            row.innerHTML = `<td>${imgName}</td>`;
+
+            // Load image
+            const img = new Image();
+            img.crossOrigin = 'anonymous';
+            await new Promise((resolve, reject) => {
+                img.onload = resolve;
+                img.onerror = reject;
+                img.src = `./public/${imgName}`;
+            });
+
+            for (const m of models) {
+                const model = loaded[m.id];
+                if (!model) {
+                    row.innerHTML += `<td class="none">-</td>`;
+                    continue;
+                }
+
+                try {
+                    const start = performance.now();
+                    const result = await model.predict(img);
+                    const ms = Math.round(performance.now() - start);
+
+                    const detSummary = {};
+                    for (const d of result.detections) {
+                        const label = d.label || `cls${d.classId}`;
+                        detSummary[label] = (detSummary[label] || 0) + 1;
+                    }
+                    const summaryStr = Object.entries(detSummary).map(([k, v]) => `${v} ${k}`).join(', ') || 'none';
+
+                    row.innerHTML += `<td class="ok">${result.numDetections} (${ms}ms)<br><small>${summaryStr}</small></td>`;
+
+                    window.__results.push({ model: m.id, image: imgName, detections: result.numDetections, time: ms, summary: summaryStr });
+
+                    // Draw visual
+                    const card = document.createElement('div');
+                    card.className = 'img-card';
+                    const displayImg = img.cloneNode();
+                    const canvas = document.createElement('canvas');
+                    card.appendChild(displayImg);
+                    card.appendChild(canvas);
+                    card.innerHTML += `<div class="caption">${imgName}: ${result.numDetections} dets, ${ms}ms</div>`;
+                    document.getElementById(`row-${m.id}`).appendChild(card);
+
+                    // Wait for clone to load then draw
+                    await new Promise(r => { displayImg.onload = r; if (displayImg.complete) r(); });
+                    canvas.width = displayImg.naturalWidth;
+                    canvas.height = displayImg.naturalHeight;
+                    const overlay = new BoxOverlay({ canvas, lineWidth: 2, fontSize: 12 });
+                    overlay.draw(result.detections);
+
+                    console.log(`${m.id} + ${imgName}: ${result.numDetections} dets in ${ms}ms — ${summaryStr}`);
+                } catch (e) {
+                    row.innerHTML += `<td class="none">ERR</td>`;
+                    console.error(`${m.id} + ${imgName}:`, e);
+                }
+            }
+
+            tbody.appendChild(row);
+        }
+
+        statusEl.textContent = 'Done!';
+        doneEl.textContent = 'true';
+    </script>
+</body>
+</html>
