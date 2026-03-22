@@ -296,6 +296,28 @@ npm run test        # Tests
 npm run example     # Demo at localhost:5173
 ```
 
+## Publishing to npm
+
+1. Create a **Classic Automation token** at [npmjs.com/settings/tokens](https://www.npmjs.com/settings/ehxuban11/tokens/) — this bypasses 2FA for CLI publishing
+2. Under **Packages and scopes**, set permissions to **Read and Write**
+3. Add the token to your `.env` file:
+   ```
+   NPM_TOKEN=npm_xxxxxxxxxxxx
+   ```
+4. Build and publish:
+   ```bash
+   source .env
+   npm config set //registry.npmjs.org/:_authToken=$NPM_TOKEN
+   npm run build
+   npm publish --access public
+   ```
+5. Bump version for subsequent releases:
+   ```bash
+   npm version patch   # 0.0.1 → 0.0.2
+   npm run build
+   npm publish --access public
+   ```
+
 ## License
 
 MIT
