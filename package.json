@@ -1,6 +1,6 @@
 {
   "name": "libreyolo-web",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "Object detection in the browser. 100% MIT Licensed. Supports YOLOX, YOLO9, RF-DETR, and YOLOv8/v11/v26 via ONNX Runtime (WebGPU + WASM).",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
