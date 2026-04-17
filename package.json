@@ -1,7 +1,7 @@
 {
   "name": "libreyolo-web",
   "version": "0.0.1",
-  "description": "Multi-family YOLO object detection in the browser. Supports YOLOX, YOLO9, RF-DETR, and YOLOv8/v11/v26 with correct per-family pre/post-processing. Powered by ONNX Runtime (WebGPU + WASM).",
+  "description": "Object detection in the browser. 100% MIT Licensed. Supports YOLOX, YOLO9, RF-DETR, and YOLOv8/v11/v26 via ONNX Runtime (WebGPU + WASM).",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
   "types": "dist/index.d.ts",
@@ -42,11 +42,11 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/xuban-ceccon/libreyolo-web"
+    "url": "https://github.com/LibreYOLO/libreyolo-web"
   },
-  "homepage": "https://github.com/xuban-ceccon/libreyolo-web#readme",
+  "homepage": "https://github.com/LibreYOLO/libreyolo-web#readme",
   "bugs": {
-    "url": "https://github.com/xuban-ceccon/libreyolo-web/issues"
+    "url": "https://github.com/LibreYOLO/libreyolo-web/issues"
   },
   "devDependencies": {
     "onnxruntime-node": "^1.24.3",
