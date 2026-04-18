@@ -21,6 +21,21 @@ const FAMILY_PREPROCESS: Record<ModelFamily, PreprocessConfig> = {
 const IMAGENET_MEAN = [0.485, 0.456, 0.406];
 const IMAGENET_STD  = [0.229, 0.224, 0.225];
 
+/**
+ * Resolve intrinsic dimensions across the supported input types.
+ * HTMLImageElement exposes naturalWidth, HTMLVideoElement exposes videoWidth,
+ * HTMLCanvasElement and ImageBitmap expose width/height directly.
+ */
+function resolveImageDimensions(image: ImageInput): { width: number; height: number } {
+  if ('naturalWidth' in image) {
+    return { width: image.naturalWidth, height: image.naturalHeight };
+  }
+  if ('videoWidth' in image) {
+    return { width: image.videoWidth, height: image.videoHeight };
+  }
+  return { width: image.width, height: image.height };
+}
+
 export class PreProcessor {
   private canvas: OffscreenCanvas | HTMLCanvasElement;
   private ctx: OffscreenCanvasRenderingContext2D | CanvasRenderingContext2D | null;
@@ -54,8 +69,15 @@ export class PreProcessor {
     this.canvas.width = targetSize;
     this.canvas.height = targetSize;
 
-    const imgWidth = 'naturalWidth' in image ? image.naturalWidth : image.width;
-    const imgHeight = 'naturalHeight' in image ? image.naturalHeight : image.height;
+    const { width: imgWidth, height: imgHeight } = resolveImageDimensions(image);
+
+    if (!imgWidth || !imgHeight) {
+      throw new Error(
+        `PreProcessor: image has zero or unresolved dimensions (${imgWidth}x${imgHeight}). ` +
+        `For HTMLVideoElement, wait for 'loadedmetadata' before calling predict(). ` +
+        `For HTMLImageElement, wait for 'load' (or check image.complete).`
+      );
+    }
 
     let scale: number;
     let scaledWidth: number;

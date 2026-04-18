@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Video-input regression test</title>
+  <style>
+    body { font-family: system-ui, sans-serif; background: #111; color: #eee; padding: 16px; }
+    #status { color: #3498db; margin: 8px 0; }
+    #done { display: none; }
+    pre { background: #1b1b1b; padding: 12px; border-radius: 4px; overflow: auto; }
+    video, img, canvas { max-width: 360px; border: 1px solid #333; margin: 4px; }
+  </style>
+</head>
+<body>
+  <h2>predict(HTMLVideoElement) regression test</h2>
+  <div id="status">Booting...</div>
+  <span id="done">false</span>
+  <div>
+    <img id="src-img" src="./public/parkour.jpg" crossorigin="anonymous">
+    <video id="src-video" autoplay playsinline muted></video>
+  </div>
+  <pre id="out"></pre>
+
+  <script type="module">
+    import { loadModel } from '../../src/index.ts';
+
+    const statusEl = document.getElementById('status');
+    const doneEl = document.getElementById('done');
+    const outEl = document.getElementById('out');
+    window.__results = {};
+
+    function setStatus(msg) {
+      console.log('[test]', msg);
+      statusEl.textContent = msg;
+    }
+
+    function finish(pass, payload) {
+      window.__results = { pass, ...payload };
+      outEl.textContent = JSON.stringify(window.__results, null, 2);
+      doneEl.textContent = 'true';
+    }
+
+    try {
+      setStatus('Loading image...');
+      const img = document.getElementById('src-img');
+      if (!img.complete) {
+        await new Promise((res, rej) => {
+          img.onload = res;
+          img.onerror = rej;
+        });
+      }
+
+      setStatus('Building synthetic video from canvas.captureStream()...');
+      const srcCanvas = document.createElement('canvas');
+      srcCanvas.width = img.naturalWidth;
+      srcCanvas.height = img.naturalHeight;
+      const srcCtx = srcCanvas.getContext('2d');
+      srcCtx.drawImage(img, 0, 0);
+
+      const stream = srcCanvas.captureStream(30);
+      const video = document.getElementById('src-video');
+      video.srcObject = stream;
+      // Keep the stream fresh so browsers don't stall captureStream on a static frame.
+      const repaint = setInterval(() => srcCtx.drawImage(img, 0, 0), 100);
+
+      await new Promise((res, rej) => {
+        video.onloadedmetadata = res;
+        video.onerror = rej;
+      });
+      await video.play();
+
+      if (!video.videoWidth || !video.videoHeight) {
+        throw new Error(`video has no intrinsic size: ${video.videoWidth}x${video.videoHeight}`);
+      }
+
+      setStatus(`Video ready (${video.videoWidth}x${video.videoHeight}). HTML width attr = ${video.width}`);
+
+      setStatus('Loading LibreYOLOXn (downloads from HuggingFace first run)...');
+      const model = await loadModel('LibreYOLOXn');
+
+      setStatus('Running predict(HTMLImageElement) as baseline...');
+      const imageResult = await model.predict(img);
+
+      setStatus('Running predict(HTMLVideoElement) - the regression target...');
+      const videoResult = await model.predict(video);
+
+      setStatus('Running predict(HTMLCanvasElement) for a third reference...');
+      const canvasResult = await model.predict(srcCanvas);
+
+      clearInterval(repaint);
+
+      // Zero-dim guard check: create a fresh, un-initialized video and confirm we throw.
+      let zeroDimThrew = false;
+      let zeroDimMessage = '';
+      try {
+        const deadVideo = document.createElement('video');
+        await model.predict(deadVideo);
+      } catch (e) {
+        zeroDimThrew = true;
+        zeroDimMessage = e.message;
+      }
+
+      const pass =
+        videoResult.numDetections > 0 &&
+        Math.abs(videoResult.numDetections - imageResult.numDetections) <= 1 &&
+        zeroDimThrew;
+
+      finish(pass, {
+        image: imageResult.numDetections,
+        video: videoResult.numDetections,
+        canvas: canvasResult.numDetections,
+        zeroDimThrew,
+        zeroDimMessage,
+        videoIntrinsic: [video.videoWidth, video.videoHeight],
+        videoAttr: [video.width, video.height],
+      });
+      setStatus(pass ? 'PASS' : 'FAIL');
+    } catch (err) {
+      console.error(err);
+      finish(false, { error: String(err && err.stack || err) });
+      setStatus('ERROR');
+    }
+  </script>
+</body>
+</html>
